@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tömegközlekedési Késésjelentő</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      color: #ffffff;
+    }
+
+    header {
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(8px);
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      margin: 0;
+    }
+
+    main {
+      max-width: 900px;
+      margin: 2rem auto;
+      padding: 1rem;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .card h2 {
+      margin-top: 0;
+    }
+
+    .toggle {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .toggle button {
+      flex: 1;
+      padding: 0.75rem;
+      border-radius: 12px;
+      border: none;
+      font-size: 1rem;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+    }
+
+    .toggle button.active {
+      background: #00bcd4;
+      color: #002b36;
+      font-weight: bold;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 0.75rem;
+      border-radius: 10px;
+      border: none;
+      margin-bottom: 1rem;
+      font-size: 1rem;
+    }
+
+    .vehicle-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .vehicle-item {
+      padding: 0.75rem;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.12);
+      cursor: pointer;
+    }
+
+    .vehicle-item.highlight {
+      outline: 2px solid #00bcd4;
+    }
+
+    .submit {
+      width: 100%;
+      padding: 0.9rem;
+      font-size: 1.1rem;
+      border-radius: 14px;
+      border: none;
+      background: #00e5ff;
+      color: #00363a;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    footer {
+      text-align: center;
+      opacity: 0.7;
+      font-size: 0.85rem;
+      margin: 2rem 0 1rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🚆 Tömegközlekedési késésjelentő</h1>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>Késés bejelentése</h2>
+
+      <div class="toggle">
+        <button class="active" id="arrivalBtn">Érkezés</button>
+        <button id="departureBtn">Indulás</button>
+      </div>
+
+      <label for="stop">Megálló / Állomás</label>
+      <input id="stop" placeholder="Kezdje el begépelni az állomás nevét…" />
+
+      <label>Menetrend szerinti járatok (aktuális idő körül)</label>
+      <div class="vehicle-list" id="vehicleList"></div>
+
+      <label for="delay">Jelentett késés (perc)</label>
+      <input id="delay" type="number" min="0" placeholder="pl. 5" />
+
+      <button class="submit" id="submitBtn">Késés beküldése</button>
+    </div>
+
+    <div class="card" id="recentDelays">
+      <h2>Legutóbbi késések</h2>
+      <p>Betöltés…</p>
+    </div>
+  </main>
+
+  <footer>
+    Anonim, közösségi késésfigyelés • MÁV / Volán
+  </footer>
+
+  <script>
+    const API_BASE = "https://transport.nemesbala.workers.dev/api";
+
+    const arrivalBtn = document.getElementById('arrivalBtn');
+    const departureBtn = document.getElementById('departureBtn');
+    const stopInput = document.getElementById('stop');
+    const vehicleList = document.getElementById('vehicleList');
+    const submitBtn = document.getElementById('submitBtn');
+
+    let currentType = 'arrival';
+    let selectedStopId = null;
+    let selectedTripId = null;
+
+    arrivalBtn.onclick = () => {
+      arrivalBtn.classList.add('active');
+      departureBtn.classList.remove('active');
+      currentType = 'arrival';
+    };
+
+    departureBtn.onclick = () => {
+      departureBtn.classList.add('active');
+      arrivalBtn.classList.remove('active');
+      currentType = 'departure';
+    };
+
+    // Autocomplete stops
+    stopInput.addEventListener('input', async () => {
+      const query = stopInput.value;
+      if (query.length < 2) return;
+
+      const res = await fetch(`${API_BASE}/stops?q=${encodeURIComponent(query)}`);
+      const stops = await res.json();
+
+      // For simplicity, just pick the first match
+      if (stops.length > 0) {
+        selectedStopId = stops[0].stop_id;
+        fetchUpcoming();
+      }
+    });
+
+    async function fetchUpcoming() {
+      if (!selectedStopId) return;
+
+      const res = await fetch(`${API_BASE}/upcoming?stop_id=${selectedStopId}&type=${currentType}`);
+      const data = await res.json();
+
+      vehicleList.innerHTML = '';
+      data.vehicles.forEach(v => {
+        const div = document.createElement('div');
+        div.className = 'vehicle-item';
+        div.textContent = `${v.route} • Menetrend szerint: ${v.scheduled_time}`;
+        div.onclick = () => {
+          selectedTripId = v.trip_id;
+          document.querySelectorAll('.vehicle-item').forEach(el => el.classList.remove('highlight'));
+          div.classList.add('highlight');
+        };
+        vehicleList.appendChild(div);
+      });
+    }
+
+    // Submit delay
+    submitBtn.onclick = async () => {
+      const delay = parseInt(document.getElementById('delay').value);
+      if (!selectedStopId || !selectedTripId || isNaN(delay)) {
+        alert('Kérlek válassz megállót, járatot és add meg a késést!');
+        return;
+      }
+
+      const payload = {
+        stop_id: selectedStopId,
+        trip_id: selectedTripId,
+        route: '', // optional, backend can fill
+        direction: currentType,
+        scheduled_time: '', // optional, backend can fill
+        delay: delay
+      };
+
+      const res = await fetch(`${API_BASE}/delay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        alert('Késés sikeresen beküldve!');
+        document.getElementById('delay').value = '';
+        fetchRecentDelays();
+      } else {
+        alert('Hiba történt: ' + result.error);
+      }
+    };
+
+    async function fetchRecentDelays() {
+      // For demo: just fetch first 5 delays
+      const res = await fetch(`${API_BASE}/delays`);
+      const delays = await res.json();
+      const container = document.getElementById('recentDelays');
+      container.innerHTML = '<h2>Legutóbbi késések</h2>' + delays.map(d => `<p>${d.stop_name} • ${d.trip_id} • +${d.reported_delay} perc • ${d.reported_at}</p>`).join('');
+    }
+
+    // Initial load
+    fetchRecentDelays();
+  </script>
+</body>
+</html>
